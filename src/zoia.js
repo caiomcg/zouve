@@ -38,6 +38,9 @@ export function createZoia({ url, token, fetchImpl = fetch }) {
     createBot: (name) => call('POST', '/bots', { name }).then((r) => r.bot),
     say: (chatId, bot, body, replyTo) =>
       call('POST', `/chats/${chatId}/messages`, { bot, body, ...(replyTo ? { replyTo } : {}) }),
+    /** Deletes one of its bot's messages, or a command typed to it. */
+    unsay: (chatId, messageId) =>
+      call('DELETE', `/chats/${chatId}/messages/${encodeURIComponent(messageId)}`),
     voiceToken: (bot, channel) => call('POST', '/voice/token', { bot, channel }),
     leaveVoice: (bot, channel) => call('POST', '/voice/leave', { bot, channel }),
 

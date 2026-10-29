@@ -5,6 +5,11 @@
  * A command is only obeyed from someone in that channel: nobody outside it
  * changes what it hears. Asked from another channel while songs are playing
  * or waiting, it says where it is; once nothing is, it moves.
+ *
+ * It cleans up after itself: the commands typed to it and what it answered
+ * are deleted when it leaves voice, a few seconds after its last word so
+ * that is read; what it said while in no channel at all, a minute after.
+ * The `cleanup` setting turns this off.
  */
 
 import { NotFound, SearchFailed } from './resolver.js';
@@ -16,20 +21,67 @@ const BOT_NAME = 'Zouve';
 const WATCH_MS = 30_000;
 /** Songs listed by !queue. */
 const QUEUE_SHOWN = 10;
+/** How long its last word stays after it leaves voice, to be read. */
+const LAST_WORD_MS = 10_000;
+/** How long what it says outside a session stays: "join a channel first" and the like. */
+const ASIDE_MS = 60_000;
 
-export function createZouve({ zoia, resolver, makePlayer, logger = console }) {
+export function createZouve({
+  zoia,
+  resolver,
+  makePlayer,
+  timing = { lastWordMs: LAST_WORD_MS, asideMs: ASIDE_MS },
+  logger = console,
+}) {
   let bot = null;
   let settings = {};
   let commands = {};
   /** @type {(ReturnType<import('./player.js').createPlayer> & { chatId?: string }) | null} */
   let player = null;
+  /** Messages to delete when the session ends: commands typed to it and its answers. */
+  let said = [];
+  let cleaning = null;
+  /** Set when Zoia refused a delete for want of permission: no use asking again. */
+  let cannotDelete = false;
+
+  const keep = (chatId, messageId) => {
+    if (chatId && messageId) said.push({ chatId, messageId });
+  };
+
+  /** Deletes what was said, after `delayMs`, unless a session starts meanwhile. */
+  function cleanUp(delayMs) {
+    clearTimeout(cleaning);
+    cleaning = setTimeout(async () => {
+      cleaning = null;
+      if (player || cannotDelete || settings.cleanup === false) return;
+      const batch = said;
+      said = [];
+      for (const { chatId, messageId } of batch) {
+        try {
+          await zoia.unsay(chatId, messageId);
+        } catch (err) {
+          if (err.status === 403) {
+            cannotDelete = true;
+            logger.warn(`[zouve] Zoia does not let me delete messages: ${err.code ?? err.message}`);
+            return;
+          }
+          // Already gone (someone deleted it) or the chat is down: move on.
+        }
+      }
+    }, delayMs);
+    cleaning.unref?.();
+  }
 
   const language = () => settings.language ?? 'en';
   const text = (key, vars) => say(language(), key, vars, commands);
 
   async function reply(chatId, body, replyTo) {
     try {
-      await zoia.say(chatId, bot.id, body, replyTo);
+      const sent = await zoia.say(chatId, bot.id, body, replyTo);
+      keep(chatId, sent?.message?.id);
+      // Not in voice: nothing will end a session, so it goes on its own,
+      // unless a session just ended and its cleanup is already on its way.
+      if (!player && !cleaning) cleanUp(timing.asideMs);
     } catch (err) {
       logger.warn(`[zouve] could not write in ${chatId}: ${err.message}`);
     }
@@ -68,6 +120,8 @@ export function createZouve({ zoia, resolver, makePlayer, logger = console }) {
         },
         onIdle: () => {
           if (player === made) player = null;
+          // The session is over: its commands and answers go, after its last word.
+          cleanUp(timing.lastWordMs);
         },
       });
       player = made;
@@ -78,6 +132,10 @@ export function createZouve({ zoia, resolver, makePlayer, logger = console }) {
   }
 
   async function onCommand(c) {
+    keep(c.chatId, c.messageId);
+    // A session is under way, or about to be: nothing goes until it ends.
+    clearTimeout(cleaning);
+    cleaning = null;
     const answer = (body) => reply(c.chatId, body, c.messageId);
     const channel = c.voice?.channel ?? null;
     if (!channel) {
@@ -110,6 +168,8 @@ export function createZouve({ zoia, resolver, makePlayer, logger = console }) {
           player = null;
           await old.stop();
         }
+        clearTimeout(cleaning);
+        cleaning = null;
         const target = playerIn(channel, c.chatId);
         const wasIdle = !target.current;
         const before = target.queue.size;

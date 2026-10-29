@@ -38,21 +38,36 @@ nobody is left in voice to hear it.
 
 ## Settings
 
-| Setting                      |                                                                                  |
-| ---------------------------- | -------------------------------------------------------------------------------- |
-| Language                     | What Zouve writes in: English, Português or Español.                             |
-| Volume                       | 0 to 100. Everyone can still turn Zouve down for themselves, as anyone in voice. |
-| Longest queue                | Songs that may wait in one channel.                                              |
-| Say what is playing          | Writes "Now playing" at each song.                                               |
-| Spotify client ID and secret | For Spotify albums and playlists.                                                |
+| Setting                      |                                                                                                |
+| ---------------------------- | ---------------------------------------------------------------------------------------------- |
+| Language                     | What Zouve writes in: English, Português or Español.                                           |
+| Volume                       | 0 to 100. Everyone can still turn Zouve down for themselves, as anyone in voice.               |
+| Longest queue                | Songs that may wait in one channel.                                                            |
+| Say what is playing          | Writes "Now playing" at each song.                                                             |
+| Clean up the chat            | When Zouve leaves voice, deletes the commands typed to it and what it answered. On by default. |
+| Spotify client ID and secret | For Spotify albums and playlists.                                                              |
 
 ## Installing
 
 In Zoia, the super admin opens **Settings › Addons**, enters `caiomcg/zouve`, reads what it
 asks for, and installs it. Then they bind it to a chat.
 
-It asks to: write in its chats as its bot, answer its commands, have a bot, play audio in
-voice as that bot, and see who is in each channel (to leave an empty one).
+It asks to: write in its chats as its bot, answer its commands and delete them once
+answered, have a bot, play audio in voice as that bot, and see who is in each channel (to
+leave an empty one).
+
+## Cleaning up
+
+Zouve keeps its chat tidy. When it leaves voice (`!stop`, the queue running out, nobody
+left listening, or an admin taking it out) it deletes, ten seconds later, the commands typed
+to it during that session and everything it answered. What it says while in no channel
+(such as "join a voice channel first") goes a minute later. Turn it off with **Clean up the
+chat** in its settings.
+
+A deleted message disappears for everyone at once. On the server, its space is freed about
+an hour later, at the next compaction (Zoia's ADR 0042). Deleting someone's command needs
+Zoia's `commands.delete` permission, which only covers commands as they are typed on the
+server; Zouve can delete nothing else anyone wrote.
 
 ## How it works
 

@@ -59,6 +59,7 @@ function fakePlayer(options) {
     async stop() {
       player.stopped = true;
       queue.clear();
+      options.onIdle?.();
     },
   };
   made.push({ options, player });
@@ -88,6 +89,7 @@ const command = (name, args = '', voice = 'geral') => ({
 beforeEach(async () => {
   said = [];
   made = [];
+  const deleted = [];
   zoia = {
     async me() {
       return {
@@ -101,6 +103,12 @@ beforeEach(async () => {
     },
     async say(chatId, bot, body, replyTo) {
       said.push({ chatId, bot, body, replyTo });
+      return { message: { id: `r${said.length}` } };
+    },
+    // Its own list: an earlier test's cleanup, still on a timer, must not land here.
+    deleted,
+    async unsay(chatId, messageId) {
+      deleted.push(messageId);
     },
     async voiceToken() {
       return { token: 't', wsUrl: 'wss://sfu' };
@@ -109,7 +117,13 @@ beforeEach(async () => {
       return [{ id: 'geral', people: [{ voice: true, bot: false }] }];
     },
   };
-  zouve = createZouve({ zoia, resolver, makePlayer: fakePlayer, logger: quiet });
+  zouve = createZouve({
+    zoia,
+    resolver,
+    makePlayer: fakePlayer,
+    timing: { lastWordMs: 5, asideMs: 15 },
+    logger: quiet,
+  });
   await zouve.start();
 });
 
@@ -242,4 +256,50 @@ test('the queue holds no more than its limit', () => {
 test('volume scales samples, clipping at the edges', () => {
   assert.deepEqual([...applyGain(Int16Array.from([1000, -1000, 30000]), 0.5)], [500, -500, 15000]);
   assert.deepEqual([...applyGain(Int16Array.from([30000, -30000]), 2)], [32767, -32768]);
+});
+
+describe('cleaning up', () => {
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  test('when it leaves, the commands typed to it and its answers go', async () => {
+    await zouve.onCommand(command('play', 'one'));
+    await zouve.onCommand(command('play', 'two'));
+    await zouve.onCommand(command('stop'));
+    await wait(30);
+    assert.deepEqual(zoia.deleted.sort(), ['m-play', 'm-play', 'm-stop', 'r1', 'r2', 'r3'].sort());
+  });
+
+  test('nothing goes while it is still playing', async () => {
+    await zouve.onCommand(command('play', 'one'));
+    await wait(30);
+    assert.deepEqual(zoia.deleted, []);
+  });
+
+  test('what it says outside a session goes on its own, a little later', async () => {
+    await zouve.onCommand(command('play', 'lofi', null));
+    await wait(8);
+    assert.deepEqual(zoia.deleted, [], 'not at once');
+    await wait(30);
+    assert.deepEqual(zoia.deleted.sort(), ['m-play', 'r1']);
+  });
+
+  test('turned off in the settings, nothing is deleted', async () => {
+    zouve.handle('settings', { settings: { cleanup: false } });
+    await zouve.onCommand(command('play', 'one'));
+    await zouve.onCommand(command('stop'));
+    await wait(30);
+    assert.deepEqual(zoia.deleted, []);
+  });
+
+  test('refused for want of permission, it stops asking', async () => {
+    let asked = 0;
+    zoia.unsay = async () => {
+      asked += 1;
+      throw Object.assign(new Error('403'), { status: 403, code: 'missing_permission' });
+    };
+    await zouve.onCommand(command('play', 'one'));
+    await zouve.onCommand(command('stop'));
+    await wait(30);
+    assert.equal(asked, 1);
+  });
 });

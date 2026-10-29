@@ -4,18 +4,40 @@
   "version": "0.0.0",
   "description": "Plays music in voice: YouTube, YouTube Music, Spotify, Apple Music and Deezer links, or a song or artist by name.",
   "image": "ghcr.io/caiomcg/zouve@sha256:FILLED_IN_BY_THE_RELEASE_WORKFLOW",
-  "permissions": ["chat.write", "commands", "bots.create", "voice.publish", "channels.read"],
+  "permissions": [
+    "chat.write",
+    "commands",
+    "commands.delete",
+    "bots.create",
+    "voice.publish",
+    "channels.read"
+  ],
   "commands": [
     {
       "name": "play",
       "description": "Plays a song, or adds it to the queue; alone, resumes",
       "usage": "<link, song or artist>"
     },
-    { "name": "pause", "description": "Pauses, or carries on" },
-    { "name": "skip", "description": "Skips to the next song" },
-    { "name": "shuffle", "description": "Shuffles the queue" },
-    { "name": "queue", "description": "Shows what plays now and next" },
-    { "name": "stop", "description": "Empties the queue and leaves the channel" }
+    {
+      "name": "pause",
+      "description": "Pauses, or carries on"
+    },
+    {
+      "name": "skip",
+      "description": "Skips to the next song"
+    },
+    {
+      "name": "shuffle",
+      "description": "Shuffles the queue"
+    },
+    {
+      "name": "queue",
+      "description": "Shows what plays now and next"
+    },
+    {
+      "name": "stop",
+      "description": "Empties the queue and leaves the channel"
+    }
   ],
   "settings": [
     {
@@ -24,9 +46,18 @@
       "label": "Language",
       "description": "What Zouve writes in the chat in.",
       "options": [
-        { "value": "en", "label": "English" },
-        { "value": "pt", "label": "Português" },
-        { "value": "es", "label": "Español" }
+        {
+          "value": "en",
+          "label": "English"
+        },
+        {
+          "value": "pt",
+          "label": "Português"
+        },
+        {
+          "value": "es",
+          "label": "Español"
+        }
       ],
       "default": "en"
     },
@@ -56,11 +87,22 @@
       "default": true
     },
     {
+      "key": "cleanup",
+      "type": "boolean",
+      "label": "Clean up the chat",
+      "description": "When Zouve leaves voice, deletes the commands typed to it and what it answered.",
+      "default": true
+    },
+    {
       "key": "spotifyClientId",
       "type": "string",
       "label": "Spotify client ID",
       "description": "From an app at developer.spotify.com. Without it, only single Spotify tracks are read, by their title."
     },
-    { "key": "spotifyClientSecret", "type": "secret", "label": "Spotify client secret" }
+    {
+      "key": "spotifyClientSecret",
+      "type": "secret",
+      "label": "Spotify client secret"
+    }
   ]
 }
