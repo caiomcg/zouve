@@ -56,6 +56,7 @@ function fakePlayer(options) {
       return was;
     },
     shuffle: () => queue.shuffle(),
+    remove: (from, to) => queue.remove(from, to),
     async stop() {
       player.stopped = true;
       queue.clear();
@@ -218,6 +219,27 @@ describe('controlling', () => {
     await zouve.onCommand(command('play', 'two'));
     await zouve.onCommand(command('queue'));
     assert.match(last(), /Now:\*\* Band – one\n\*\*Next:\*\*\n1\. Band – two/);
+  });
+
+  test('remove takes one song, or a range, as !queue numbers them', async () => {
+    await zouve.onCommand(command('remove', '1'));
+    assert.match(last(), /nothing in the queue to remove/);
+    await zouve.onCommand(command('play', 'album'));
+    await zouve.onCommand(command('play', 'four'));
+    await zouve.onCommand(command('remove', '2'));
+    assert.match(last(), /Removed \*\*Band – Song 2\*\*/);
+    await zouve.onCommand(command('remove', '3 1'));
+    assert.match(last(), /Removed 3 songs/);
+    assert.equal(made[0].player.queue.size, 0);
+  });
+
+  test('remove says how to use it when the numbers are not in the queue', async () => {
+    await zouve.onCommand(command('play', 'two'));
+    for (const args of ['', '0', '2', 'x', '1.5', '1 2', '1 1 1']) {
+      await zouve.onCommand(command('remove', args));
+      assert.match(last(), /!remove a number from !queue.*\(1 to 1\)/);
+    }
+    assert.equal(made[0].player.queue.size, 1);
   });
 
   test('stop empties it and leaves', async () => {

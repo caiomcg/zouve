@@ -341,6 +341,13 @@ export function createPlayer({
       return count;
     },
 
+    /** Takes songs out of what is to come; see Queue.remove. Returns them. */
+    remove(from, to) {
+      const removed = queue.remove(from, to);
+      prefetch();
+      return removed;
+    },
+
     /** Empties the queue, stops the song and leaves the channel. */
     async stop() {
       queue.clear();

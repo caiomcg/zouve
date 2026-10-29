@@ -196,6 +196,23 @@ export function createZouve({
         const count = here?.shuffle() ?? 0;
         return answer(count > 1 ? text('shuffled', { count }) : text('shuffledNone'));
       }
+      case 'remove': {
+        const size = here?.queue.size ?? 0;
+        if (size === 0) return answer(text('removeNone'));
+        // One number, or two for a range, as !queue numbers them; either way round.
+        const numbers = c.args.split(/\s+/).filter(Boolean).map(Number);
+        const [from, to = from] = numbers;
+        const valid = (n) => Number.isInteger(n) && n >= 1 && n <= size;
+        if (numbers.length < 1 || numbers.length > 2 || !valid(from) || !valid(to)) {
+          return answer(text('removeUsage', { size }));
+        }
+        const gone = here.remove(Math.min(from, to), Math.max(from, to));
+        return answer(
+          gone.length === 1
+            ? text('removedOne', { track: nameOf(gone[0]) })
+            : text('removedMany', { count: gone.length }),
+        );
+      }
       case 'queue': {
         if (!here?.current) return answer(text('queueEmpty'));
         const lines = [text('queueNow', { track: nameOf(here.current) })];

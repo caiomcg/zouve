@@ -9,6 +9,7 @@ it is bound to:
 | `!pause`                       | Pauses, or carries on.                                                                    |
 | `!skip`                        | Skips to the next song.                                                                   |
 | `!shuffle`                     | Shuffles what is still to come.                                                           |
+| `!remove <n> [last]`           | Takes song `n` (as `!queue` numbers them) out of the queue; with two numbers, a range.    |
 | `!queue`                       | Shows what plays now and next.                                                            |
 | `!stop`                        | Empties the queue and leaves the channel.                                                 |
 

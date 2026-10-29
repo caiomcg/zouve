@@ -31,6 +31,11 @@
       "description": "Shuffles the queue"
     },
     {
+      "name": "remove",
+      "description": "Takes a song, or a range of songs, out of the queue",
+      "usage": "<number> [last number]"
+    },
+    {
       "name": "queue",
       "description": "Shows what plays now and next"
     },
