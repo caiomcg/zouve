@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 
 import { classify } from '../src/links.js';
 import { bestMatch, score } from '../src/match.js';
-import { createResolver, NotFound } from '../src/resolver.js';
+import { createResolver, NotFound, SearchFailed } from '../src/resolver.js';
 import { createDeezer, appleTrack, songsOf } from '../src/metadata.js';
 
 const quiet = { info() {}, warn() {}, error() {} };
@@ -199,6 +199,24 @@ describe('resolving', () => {
       logger: quiet,
     });
     await assert.rejects(resolver.resolve('zzzz qqqq'), NotFound);
+  });
+
+  test('when every search errors, it says searching is broken, not that nothing was found', async () => {
+    const broken = {
+      searchMusic: async () => {
+        throw new Error('libz.so.1: failed to map segment');
+      },
+      searchVideos: async () => {
+        throw new Error('libz.so.1: failed to map segment');
+      },
+    };
+    const resolver = createResolver({
+      ytdlp: broken,
+      spotify: noSpotify,
+      deezer: createDeezer(),
+      logger: quiet,
+    });
+    await assert.rejects(resolver.resolve('linkin park lost'), SearchFailed);
   });
 
   test('a YouTube link plays as it is', async () => {

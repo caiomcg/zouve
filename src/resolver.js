@@ -21,6 +21,9 @@ import { bestMatch } from './match.js';
 
 export class NotFound extends Error {}
 
+/** Every search failed, rather than found nothing: something is broken, not missing. */
+export class SearchFailed extends Error {}
+
 /**
  * @param {object} options
  * @param {() => object} options.spotify the Spotify client as the settings are now
@@ -48,16 +51,19 @@ export function createResolver({ ytdlp, spotify, deezer, fetchImpl = fetch, logg
   async function search(text) {
     const wanted = { title: text, artist: '', durationSec: null };
     const candidates = [];
+    const errors = [];
     for (const attempt of [() => ytdlp.searchMusic(text), () => ytdlp.searchVideos(text)]) {
       try {
         candidates.push(...(await attempt()));
       } catch (err) {
         logger.warn(`[resolve] a search failed: ${err.message}`);
+        errors.push(err.message);
       }
       // A good enough song from YouTube Music needs no video search.
       const found = bestMatch(candidates, wanted, { threshold: 4 });
       if (found) return found;
     }
+    if (errors.length === 2) throw new SearchFailed(errors.at(-1));
     return bestMatch(candidates, wanted, { threshold: 1.5 });
   }
 

@@ -6,7 +6,7 @@
  * in: nobody outside a channel changes what it hears.
  */
 
-import { NotFound } from './resolver.js';
+import { NotFound, SearchFailed } from './resolver.js';
 import { nameOf, say } from './messages.js';
 
 /** The bot's name, made unique by Zoia if it is taken. */
@@ -93,6 +93,7 @@ export function createZouve({ zoia, resolver, makePlayer, logger = console }) {
         try {
           tracks = await resolver.resolve(c.args);
         } catch (err) {
+          if (err instanceof SearchFailed) return answer(text('broken'));
           if (!(err instanceof NotFound)) logger.warn(`[zouve] resolving: ${err.message}`);
           return answer(text('notFound', { query: c.args.slice(0, 100) }));
         }
