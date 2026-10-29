@@ -1,0 +1,66 @@
+{
+  "id": "zouve",
+  "name": "Zouve",
+  "version": "0.0.0",
+  "description": "Plays music in voice: YouTube, YouTube Music, Spotify, Apple Music and Deezer links, or a song or artist by name.",
+  "image": "ghcr.io/caiomcg/zouve@sha256:FILLED_IN_BY_THE_RELEASE_WORKFLOW",
+  "permissions": ["chat.write", "commands", "bots.create", "voice.publish", "channels.read"],
+  "commands": [
+    {
+      "name": "play",
+      "description": "Plays a song, or adds it to the queue; alone, resumes",
+      "usage": "<link, song or artist>"
+    },
+    { "name": "pause", "description": "Pauses, or carries on" },
+    { "name": "skip", "description": "Skips to the next song" },
+    { "name": "shuffle", "description": "Shuffles the queue" },
+    { "name": "queue", "description": "Shows what plays now and next" },
+    { "name": "stop", "description": "Empties the queue and leaves the channel" }
+  ],
+  "settings": [
+    {
+      "key": "language",
+      "type": "select",
+      "label": "Language",
+      "description": "What Zouve writes in the chat in.",
+      "options": [
+        { "value": "en", "label": "English" },
+        { "value": "pt", "label": "Português" },
+        { "value": "es", "label": "Español" }
+      ],
+      "default": "en"
+    },
+    {
+      "key": "volume",
+      "type": "number",
+      "label": "Volume",
+      "description": "0 to 100. Everyone can still turn Zouve down for themselves.",
+      "min": 0,
+      "max": 100,
+      "default": 60
+    },
+    {
+      "key": "maxQueue",
+      "type": "number",
+      "label": "Longest queue",
+      "description": "Songs that may wait in one channel.",
+      "min": 1,
+      "max": 500,
+      "default": 100
+    },
+    {
+      "key": "announce",
+      "type": "boolean",
+      "label": "Say what is playing",
+      "description": "Writes “Now playing” in the chat at each song.",
+      "default": true
+    },
+    {
+      "key": "spotifyClientId",
+      "type": "string",
+      "label": "Spotify client ID",
+      "description": "From an app at developer.spotify.com. Without it, only single Spotify tracks are read, by their title."
+    },
+    { "key": "spotifyClientSecret", "type": "secret", "label": "Spotify client secret" }
+  ]
+}

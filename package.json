@@ -1,0 +1,27 @@
+{
+  "name": "zouve",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A Zoia addon that plays music in voice, from links or a search.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test test/*.test.js",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "@livekit/rtc-node": "1.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.10"
+  }
+}
