@@ -23,6 +23,10 @@
       "description": "Pauses, or carries on"
     },
     {
+      "name": "resume",
+      "description": "Carries on after a pause"
+    },
+    {
       "name": "skip",
       "description": "Skips to the next song"
     },

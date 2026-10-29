@@ -202,6 +202,17 @@ describe('controlling', () => {
     assert.match(last(), /Playing again/);
   });
 
+  test('resume carries on after a pause, and says when it was not paused', async () => {
+    await zouve.onCommand(command('resume'));
+    assert.match(last(), /not paused/);
+    await zouve.onCommand(command('pause'));
+    assert.match(last(), /!resume, or !pause again/);
+    await zouve.onCommand(command('resume'));
+    assert.match(last(), /Playing again/);
+    await zouve.onCommand(command('pause'));
+    assert.match(last(), /Paused/);
+  });
+
   test('skip names what it skipped', async () => {
     await zouve.onCommand(command('skip'));
     assert.match(last(), /Skipped \*\*Band – one\*\*/);

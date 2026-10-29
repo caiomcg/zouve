@@ -7,6 +7,7 @@ it is bound to:
 | ------------------------------ | ----------------------------------------------------------------------------------------- |
 | `!play <link, song or artist>` | Plays it in your voice channel, or adds it to the queue. Alone, carries on after a pause. |
 | `!pause`                       | Pauses, or carries on.                                                                    |
+| `!resume`                      | Carries on after a pause.                                                                 |
 | `!skip`                        | Skips to the next song.                                                                   |
 | `!shuffle`                     | Shuffles what is still to come.                                                           |
 | `!remove <n> [last]`           | Takes song `n` (as `!queue` numbers them) out of the queue; with two numbers, a range.    |

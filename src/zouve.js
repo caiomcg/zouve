@@ -187,6 +187,10 @@ export function createZouve({
         if (!here?.current) return answer(text('nothing'));
         return answer(here.togglePause() ? text('paused') : text('resumed'));
       }
+      case 'resume': {
+        if (!here?.current) return answer(text('nothing'));
+        return answer(here.resume() ? text('resumed') : text('notPaused'));
+      }
       case 'skip': {
         if (!here?.current) return answer(text('nothing'));
         const was = here.skip();
