@@ -63,8 +63,8 @@ export async function connectRoom(url, token) {
 }
 
 /** Decodes what yt-dlp downloads of a track: from its read when it has one, else its page. */
-export function decode(track) {
-  const ytdlp = streamAudio(track);
+export function decode(track, options) {
+  const ytdlp = streamAudio(track, options);
   const ffmpeg = spawn(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-i', 'pipe:0', ...TO_PCM], {
     stdio: ['pipe', 'pipe', 'pipe'],
   });
@@ -218,6 +218,8 @@ export function createPlayer({
     const attempts = [
       ...(track.stream ? [() => decodeTrack(track)] : []),
       () => decodeTrack({ ...track, stream: null }),
+      // Last, yt-dlp's own clients: slower, but what works when ours do not.
+      () => decodeTrack({ ...track, stream: null }, { plain: true }),
     ];
     let frames = 0;
     for (const attempt of attempts) {
@@ -250,7 +252,11 @@ export function createPlayer({
       for (;;) {
         const next = queue.next();
         if (!next) break;
-        const track = (await next.preparing) ?? (await prepare(next));
+        // Readied while the last one played; else found now, and downloaded
+        // straight from its page: one read, not one to find it and one to play.
+        const track = next.preparing
+          ? await next.preparing
+          : await resolver.ready(next).catch(() => null);
         if (!track) {
           onEvent('missing', next);
           continue;

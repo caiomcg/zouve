@@ -376,3 +376,42 @@ describe('the services’ APIs', () => {
     );
   });
 });
+
+describe('YouTube Music’s own search', () => {
+  test('gives each song’s title, artist and length, ready to judge', async () => {
+    const { parseSearch, seconds } = await import('../src/ytmusic.js');
+    const { readFile } = await import('node:fs/promises');
+    const json = JSON.parse(
+      await readFile(new URL('./fixtures/ytmusic-search.json', import.meta.url), 'utf8'),
+    );
+    const [first] = parseSearch(json);
+    assert.deepEqual(first, {
+      url: 'https://music.youtube.com/watch?v=auGo9bUpBf8',
+      title: 'Lost',
+      artist: 'Linkin Park',
+      durationSec: 200,
+      source: 'ytmusic',
+      full: true,
+    });
+    assert.equal(seconds('1:02:03'), 3723);
+    assert.equal(seconds('223M plays'), null);
+  });
+
+  test('when it fails, yt-dlp’s search is used', async () => {
+    const { createYtdlp } = await import('../src/ytdlp.js');
+    const asked = [];
+    const ytdlp = createYtdlp({
+      songs: async () => {
+        throw new Error('400');
+      },
+      run: async (args) => {
+        asked.push(args.at(-1));
+        return JSON.stringify({ entries: [{ id: 'x', title: 'Lost' }] });
+      },
+      logger: quiet,
+    });
+    const [found] = await ytdlp.searchMusic('linkin park lost');
+    assert.equal(found.title, 'Lost');
+    assert.match(asked[0], /music\.youtube\.com\/search/);
+  });
+});

@@ -17,10 +17,19 @@ import { rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { searchSongs } from './ytmusic.js';
+
 const BIN = process.env.YTDLP_BIN ?? 'yt-dlp';
 
 /** Common flags: quiet, no config of anyone's, caches where the image may write. */
 const BASE = ['--ignore-config', '--no-warnings', '--quiet', '--cache-dir', '/tmp/yt-dlp'];
+
+/**
+ * YouTube's clients, minus tv_samsung, which is often served an ad that
+ * yt-dlp then sits out (five seconds and more) before downloading. Without
+ * it, a song starts in about three seconds on Zoia's server.
+ */
+const NO_ADS = ['--extractor-args', 'youtube:player_client=default,-tv_samsung'];
 
 /** How long a read is trusted to download from; YouTube's addresses last about six hours. */
 export const STREAM_TTL_MS = 60 * 60_000;
@@ -72,7 +81,7 @@ function candidate(entry, source, raw = null, now = Date.now()) {
 export const fresh = (track, now = Date.now()) =>
   Boolean(track?.stream && now - track.stream.at < STREAM_TTL_MS);
 
-export function createYtdlp({ run = runYtdlp } = {}) {
+export function createYtdlp({ run = runYtdlp, songs = searchSongs, logger = console } = {}) {
   const list = async (args, source) => {
     const data = JSON.parse(await run(['--flat-playlist', '--dump-single-json', ...args]));
     return (data.entries ?? []).filter((e) => e?.id).map((e) => candidate(e, source));
@@ -80,7 +89,14 @@ export function createYtdlp({ run = runYtdlp } = {}) {
 
   /** One link read in full: its details and its best audio's address. */
   const info = async (url) => {
-    const raw = await run(['--no-playlist', '-f', 'bestaudio/best', '--dump-single-json', url]);
+    const raw = await run([
+      ...NO_ADS,
+      '--no-playlist',
+      '-f',
+      'bestaudio/best',
+      '--dump-single-json',
+      url,
+    ]);
     return candidate(
       JSON.parse(raw),
       url.includes('music.youtube.com') ? 'ytmusic' : 'youtube',
@@ -89,16 +105,26 @@ export function createYtdlp({ run = runYtdlp } = {}) {
   };
 
   return {
-    /** YouTube Music's songs for a query, titles only: the official recordings. */
-    searchMusic: (query, limit = 3) =>
-      list(
+    /**
+     * YouTube Music's songs for a query: the official recordings. From its own
+     * search, with artists and lengths, in under a second; from yt-dlp's,
+     * titles alone, when that fails.
+     */
+    async searchMusic(query, limit = 3) {
+      try {
+        return await songs(query, { limit });
+      } catch (err) {
+        logger.warn(`[ytdlp] YouTube Music's search failed, using yt-dlp's: ${err.message}`);
+      }
+      return list(
         [
           '--playlist-end',
           String(limit),
           `https://music.youtube.com/search?q=${encodeURIComponent(query)}#songs`,
         ],
         'ytmusic',
-      ),
+      );
+    },
 
     /** YouTube's videos for a query, with their channel and length. */
     searchVideos: (query, limit = 5) => list([`ytsearch${limit}:${query}`], 'youtube'),
@@ -112,13 +138,13 @@ export function createYtdlp({ run = runYtdlp } = {}) {
 
 /**
  * A song's best audio, as yt-dlp downloads it, on stdout. From a read kept
- * in the track when there is one, which starts in a few seconds; from the
- * page otherwise, which reads it again first.
+ * in the track when there is one; from the page otherwise, which reads it
+ * first. `plain` uses yt-dlp's own choice of clients, for when ours fails.
  */
-export function streamAudio(track) {
+export function streamAudio(track, { plain = false } = {}) {
   const output = ['-f', 'bestaudio/best', '--no-part', '-o', '-'];
   if (!track.stream?.info) {
-    return spawn(BIN, [...BASE, '--no-playlist', ...output, track.url], {
+    return spawn(BIN, [...BASE, ...(plain ? [] : NO_ADS), '--no-playlist', ...output, track.url], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
   }
