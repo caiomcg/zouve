@@ -30,6 +30,7 @@ const TEXT = {
     missing: 'Could not find **{track}**; skipping it.',
     unjoinable: 'I could not join the voice channel ({why}).',
     elsewhere: 'I am playing in another channel; join it to control me.',
+    removed: 'I was taken out of the voice channel, so I stopped and emptied the queue.',
   },
   pt: {
     joinFirst: 'Entre num canal de voz primeiro, depois use {cmd:play} com o que quer ouvir.',
@@ -55,6 +56,7 @@ const TEXT = {
     missing: 'Não encontrei **{track}**; pulando.',
     unjoinable: 'Não consegui entrar no canal de voz ({why}).',
     elsewhere: 'Estou tocando em outro canal; entre nele para me controlar.',
+    removed: 'Fui tirado do canal de voz, então parei e esvaziei a fila.',
   },
   es: {
     joinFirst: 'Entra primero a un canal de voz y luego usa {cmd:play} con lo que quieras oír.',
@@ -80,6 +82,7 @@ const TEXT = {
     missing: 'No encontré **{track}**; la salto.',
     unjoinable: 'No pude entrar al canal de voz ({why}).',
     elsewhere: 'Estoy tocando en otro canal; entra en él para controlarme.',
+    removed: 'Me sacaron del canal de voz, así que paré y vacié la cola.',
   },
 };
 

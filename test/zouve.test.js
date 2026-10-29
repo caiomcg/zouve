@@ -30,6 +30,9 @@ function fakePlayer(options) {
     get current() {
       return queue.current;
     },
+    get busy() {
+      return Boolean(queue.current) || queue.size > 0;
+    },
     enqueue(tracks) {
       const added = queue.add(tracks);
       if (!queue.current) {
@@ -144,13 +147,26 @@ describe('playing', () => {
     assert.match(last(), /could not find “nothing”/);
   });
 
-  test('each channel has a player of its own', async () => {
+  test('it plays in one channel at a time: busy, another channel is told where it is', async () => {
     await zouve.onCommand(command('play', 'one', 'geral'));
     await zouve.onCommand(command('play', 'two', 'jogos'));
-    assert.deepEqual(
-      made.map((m) => m.options.channel),
-      ['geral', 'jogos'],
-    );
+    assert.match(last(), /playing in another channel/);
+    assert.equal(made.length, 1);
+    assert.equal(zouve.player.channel, 'geral');
+  });
+
+  test('idle in one channel, it moves to where it is asked', async () => {
+    await zouve.onCommand(command('play', 'one', 'geral'));
+    zouve.player.queue.clear();
+    await zouve.onCommand(command('play', 'two', 'jogos'));
+    assert.equal(made[0].player.stopped, true);
+    assert.equal(zouve.player.channel, 'jogos');
+  });
+
+  test('taken out of the channel, it says so', async () => {
+    await zouve.onCommand(command('play', 'one'));
+    made[0].options.onEvent('removed');
+    assert.match(last(), /taken out of the voice channel/);
   });
 
   test('the volume is the setting, as it changes', async () => {
@@ -193,12 +209,13 @@ describe('controlling', () => {
   test('stop empties it and leaves', async () => {
     await zouve.onCommand(command('stop'));
     assert.equal(made[0].player.stopped, true);
-    assert.equal(zouve.players.size, 0);
+    assert.equal(zouve.player, null);
   });
 
-  test('from another channel, nothing here to control', async () => {
+  test('from another channel, it cannot be controlled', async () => {
     await zouve.onCommand(command('skip', '', 'jogos'));
-    assert.match(last(), /Nothing is playing/);
+    assert.match(last(), /playing in another channel/);
+    assert.equal(made[0].player.queue.current.title, 'one');
   });
 });
 
@@ -207,7 +224,7 @@ test('it leaves a channel nobody is listening in', async () => {
   zoia.channels = async () => [{ id: 'geral', people: [{ voice: true, bot: true }] }];
   await zouve.watch();
   assert.equal(made[0].player.stopped, true);
-  assert.equal(zouve.players.size, 0);
+  assert.equal(zouve.player, null);
 });
 
 test('a bot replies in the language set, and command names follow the server', () => {

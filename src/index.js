@@ -36,8 +36,9 @@ const spotifyNow = () => {
   return spotify.client;
 };
 
+const ytdlp = createYtdlp();
 const resolver = createResolver({
-  ytdlp: createYtdlp(),
+  ytdlp,
   deezer: createDeezer(),
   // Read at each use, so a change of settings applies to the next !play.
   spotify: spotifyNow,
@@ -47,7 +48,12 @@ const zouve = createZouve({
   zoia,
   resolver,
   makePlayer: (options) =>
-    createPlayer({ ...options, livekitUrl: ZOIA_LIVEKIT_URL ?? null, resolver }),
+    createPlayer({
+      ...options,
+      livekitUrl: ZOIA_LIVEKIT_URL ?? null,
+      resolver,
+      lookup: ytdlp.info,
+    }),
 });
 
 const stop = new AbortController();

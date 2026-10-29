@@ -17,7 +17,10 @@
 
 import { classify, isUrl } from './links.js';
 import { songsOf } from './metadata.js';
-import { bestMatch } from './match.js';
+import { bestMatch, score } from './match.js';
+
+/** How many of a search's results may be read in full, one at a time. */
+const READ_AT_MOST = 3;
 
 export class NotFound extends Error {}
 
@@ -29,16 +32,49 @@ export class SearchFailed extends Error {}
  * @param {() => object} options.spotify the Spotify client as the settings are now
  */
 export function createResolver({ ytdlp, spotify, deezer, fetchImpl = fetch, logger = console }) {
+  /**
+   * YouTube Music's results, in its own order, read in full one at a time
+   * (its search gives titles alone), stopping at the first that is `good`:
+   * each read is seconds, so the usual case is one. The best read is kept
+   * when none is good, if it is at least `floor`.
+   */
+  async function choose(results, wanted, { good, floor }) {
+    let best = null;
+    let bestScore = -Infinity;
+    for (const result of results.slice(0, READ_AT_MOST)) {
+      const read = result.full ? result : await ytdlp.info(result.url).catch(() => result);
+      const s = score(read, wanted);
+      if (s >= good) return read;
+      if (s > bestScore) {
+        best = read;
+        bestScore = s;
+      }
+    }
+    return bestScore >= floor ? best : null;
+  }
+
   /** Every search we may try for a song, in order, each failing on its own. */
   async function findSong(song) {
+    // Title, artist and a length within seconds: it is the recording.
+    const good = 7;
     const attempts = [];
-    if (song.isrc) attempts.push(() => ytdlp.searchMusic(song.isrc));
+    if (song.isrc) {
+      attempts.push(async () =>
+        choose(await ytdlp.searchMusic(song.isrc), song, { good, floor: 3 }),
+      );
+    }
     const named = song.artist ? `${song.artist} ${song.title}` : song.title;
-    attempts.push(() => ytdlp.searchMusic(named));
-    attempts.push(() => ytdlp.searchVideos(song.artist ? `${song.artist} - ${song.title}` : named));
+    attempts.push(async () => choose(await ytdlp.searchMusic(named), song, { good, floor: 3 }));
+    // Videos come with their channel and length: no reading needed to judge them.
+    attempts.push(async () =>
+      bestMatch(
+        await ytdlp.searchVideos(song.artist ? `${song.artist} - ${song.title}` : named),
+        song,
+      ),
+    );
     for (const attempt of attempts) {
       try {
-        const found = bestMatch(await attempt(), song);
+        const found = await attempt();
         if (found) return found;
       } catch (err) {
         logger.warn(`[resolve] a search failed, trying the next: ${err.message}`);
@@ -50,21 +86,25 @@ export function createResolver({ ytdlp, spotify, deezer, fetchImpl = fetch, logg
   /** Words, as someone types them: "artist song" or just "song". */
   async function search(text) {
     const wanted = { title: text, artist: '', durationSec: null };
-    const candidates = [];
     const errors = [];
-    for (const attempt of [() => ytdlp.searchMusic(text), () => ytdlp.searchVideos(text)]) {
-      try {
-        candidates.push(...(await attempt()));
-      } catch (err) {
-        logger.warn(`[resolve] a search failed: ${err.message}`);
-        errors.push(err.message);
-      }
+    let music = null;
+    try {
+      music = await choose(await ytdlp.searchMusic(text), wanted, { good: 4, floor: 1.5 });
       // A good enough song from YouTube Music needs no video search.
-      const found = bestMatch(candidates, wanted, { threshold: 4 });
-      if (found) return found;
+      if (music && score(music, wanted) >= 4) return music;
+    } catch (err) {
+      logger.warn(`[resolve] a search failed: ${err.message}`);
+      errors.push(err.message);
+    }
+    let videos = [];
+    try {
+      videos = await ytdlp.searchVideos(text);
+    } catch (err) {
+      logger.warn(`[resolve] a search failed: ${err.message}`);
+      errors.push(err.message);
     }
     if (errors.length === 2) throw new SearchFailed(errors.at(-1));
-    return bestMatch(candidates, wanted, { threshold: 1.5 });
+    return bestMatch([...(music ? [music] : []), ...videos], wanted, { threshold: 1.5 });
   }
 
   const asTrack = (c) => ({ ...c });

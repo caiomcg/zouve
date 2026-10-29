@@ -157,6 +157,7 @@ const track = (title, artist, extra = {}) => ({
   artist,
   durationSec: 200,
   source: 'ytmusic',
+  full: true,
   ...extra,
 });
 
@@ -176,6 +177,40 @@ describe('resolving', () => {
     const [found] = await resolver.resolve('rick astley never gonna');
     assert.equal(found.artist, 'Rick Astley');
     assert.deepEqual(ytdlp.asked, ['music:rick astley never gonna']);
+  });
+
+  test('YouTube Music titles are read in full one at a time, only until one is good', async () => {
+    const flat = (id, title) => ({
+      url: `https://music.youtube.com/watch?v=${id}`,
+      title,
+      artist: '',
+      durationSec: null,
+      source: 'ytmusic',
+    });
+    const read = [];
+    const ytdlp = {
+      ...fakeYtdlp({
+        music: { 'linkin park lost': [flat('a', 'Lost'), flat('b', 'Lost (Live)')] },
+      }),
+      async info(url) {
+        read.push(url);
+        return {
+          ...flat(url.slice(-1), 'Lost'),
+          artist: 'Linkin Park',
+          durationSec: 199,
+          full: true,
+        };
+      },
+    };
+    const resolver = createResolver({
+      ytdlp,
+      spotify: noSpotify,
+      deezer: createDeezer(),
+      logger: quiet,
+    });
+    const [found] = await resolver.resolve('linkin park lost');
+    assert.equal(found.artist, 'Linkin Park');
+    assert.deepEqual(read, ['https://music.youtube.com/watch?v=a'], 'the first was good enough');
   });
 
   test('when YouTube Music fails, YouTube is searched instead', async () => {

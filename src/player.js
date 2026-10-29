@@ -1,8 +1,13 @@
 /**
- * One voice channel's player: the bot in that channel's room, its queue, and
- * the song playing. The audio goes yt-dlp → ffmpeg → 48 kHz stereo PCM → a
+ * The player: the bot in one voice channel's room, its queue, and the song
+ * playing. Audio is yt-dlp downloading → ffmpeg → 48 kHz stereo PCM → a
  * LiveKit audio source published as the bot's microphone, so everyone hears
  * it as they hear someone in voice, at the volume they chose for it.
+ *
+ * yt-dlp downloads from the read of the song's page made when it was found,
+ * so it starts in a few seconds; while a song plays, the next one is found
+ * and read, so it starts as soon as this one ends. Should a read have gone
+ * stale, the song is downloaded from its page, which reads it again first.
  */
 
 import { spawn } from 'node:child_process';
@@ -17,7 +22,7 @@ import {
 } from '@livekit/rtc-node';
 
 import { Queue } from './queue.js';
-import { streamAudio } from './ytdlp.js';
+import { fresh, streamAudio } from './ytdlp.js';
 
 export const SAMPLE_RATE = 48_000;
 export const CHANNELS = 2;
@@ -26,6 +31,9 @@ export const FRAME_SAMPLES = SAMPLE_RATE / 50;
 const FRAME_BYTES = FRAME_SAMPLES * CHANNELS * 2;
 /** How long the bot stays after the queue runs out, in case someone queues more. */
 const IDLE_MS = 90_000;
+
+const FFMPEG = process.env.FFMPEG_BIN ?? 'ffmpeg';
+const TO_PCM = ['-f', 's16le', '-ac', String(CHANNELS), '-ar', String(SAMPLE_RATE), 'pipe:1'];
 
 /** Joins a room as the bot and publishes an audio source as its microphone. */
 export async function connectRoom(url, token) {
@@ -54,31 +62,17 @@ export async function connectRoom(url, token) {
   };
 }
 
-/** Decodes whatever yt-dlp sends to raw PCM, as fast as it is read. */
-export function decode(input) {
-  const ffmpeg = spawn(
-    process.env.FFMPEG_BIN ?? 'ffmpeg',
-    [
-      '-hide_banner',
-      '-loglevel',
-      'error',
-      '-i',
-      'pipe:0',
-      '-f',
-      's16le',
-      '-ac',
-      String(CHANNELS),
-      '-ar',
-      String(SAMPLE_RATE),
-      'pipe:1',
-    ],
-    { stdio: ['pipe', 'pipe', 'pipe'] },
-  );
-  input.pipe(ffmpeg.stdin);
+/** Decodes what yt-dlp downloads of a track: from its read when it has one, else its page. */
+export function decode(track) {
+  const ytdlp = streamAudio(track);
+  const ffmpeg = spawn(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-i', 'pipe:0', ...TO_PCM], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  ytdlp.stdout.pipe(ffmpeg.stdin);
   // Killing either end breaks the pipe; that is how a song is stopped.
   ffmpeg.stdin.on('error', () => {});
-  input.on('error', () => {});
-  return ffmpeg;
+  ytdlp.stdout.on('error', () => {});
+  return { ffmpeg, ytdlp };
 }
 
 /** Scales 16-bit samples in place by `gain`, clipping. */
@@ -97,93 +91,152 @@ export function applyGain(samples, gain) {
  * @param {() => Promise<{ token: string, wsUrl: string }>} options.token a fresh voice token
  * @param {string | null} options.livekitUrl where LiveKit is from inside the container
  * @param {ReturnType<import('./resolver.js').createResolver>} options.resolver
+ * @param {(url: string) => Promise<object>} options.lookup reads a link in full, to download from
  * @param {() => number} options.volume 0 to 100, read for every frame
- * @param {(event: string, track: object, detail?: string) => void} options.onEvent
+ * @param {(event: string, track?: object, detail?: string) => void} options.onEvent
  */
 export function createPlayer({
   channel,
   token,
   livekitUrl,
   resolver,
+  lookup,
   volume,
   maxQueue = 100,
   onEvent,
   onIdle,
   connect = connectRoom,
-  stream = streamAudio,
+  decodeTrack = decode,
   logger = console,
 }) {
   const queue = new Queue({ max: maxQueue });
   let connection = null;
+  let leaving = false;
   let running = false;
   let paused = false;
   let resume = null;
-  /** The song playing: its processes, and how to stop it. */
+  /** The song playing: how to stop it. */
   let playing = null;
   let idleTimer = null;
 
   async function ensureConnected() {
     if (connection) return connection;
     const issued = await token();
-    connection = await connect(livekitUrl || issued.wsUrl, issued.token);
-    connection.onClose?.(() => {
+    const joined = await connect(livekitUrl || issued.wsUrl, issued.token);
+    connection = joined;
+    // Taken out of the room by someone else (an admin, the server): it stops
+    // here and does not come back with the next song.
+    joined.onClose?.(() => {
+      if (connection !== joined) return;
       connection = null;
+      if (leaving) return;
+      queue.clear();
+      paused = false;
+      playing?.stop();
+      onEvent('removed');
+      void leave();
     });
-    return connection;
+    return joined;
   }
 
   async function leave() {
     clearTimeout(idleTimer);
+    leaving = true;
     const closing = connection;
     connection = null;
     await closing?.close();
     onIdle?.();
   }
 
+  /** A track found and its address read, ready to start at once; null when it cannot be. */
+  async function prepare(track) {
+    const found = await resolver.ready(track).catch(() => null);
+    if (!found) return null;
+    if (fresh(found)) return found;
+    try {
+      const read = await lookup(found.url);
+      return { ...found, stream: read.stream, title: found.title || read.title };
+    } catch (err) {
+      logger.warn(`[player] could not read ${found.url}: ${err.message}`);
+      // No address: the slow way will try when its turn comes.
+      return found;
+    }
+  }
+
+  /** Readies the next song in the background, in place in the queue. */
+  function prefetch() {
+    const next = queue.upcoming[0];
+    if (!next || next.preparing || fresh(next)) return;
+    next.preparing = prepare(next).then((ready) => {
+      const at = queue.upcoming.indexOf(next);
+      if (ready && at !== -1) queue.upcoming[at] = ready;
+      return ready;
+    });
+  }
+
+  /** Feeds one decoder's PCM to LiveKit until it ends or is stopped. Returns frames sent. */
+  async function pump(decoder, source, state) {
+    let pending = Buffer.alloc(0);
+    let frames = 0;
+    for await (const chunk of decoder.ffmpeg.stdout) {
+      if (state.stopped) break;
+      pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;
+      while (pending.length >= FRAME_BYTES) {
+        if (paused) await new Promise((r) => (resume = r));
+        if (state.stopped) break;
+        // Copied out: an Int16Array needs aligned memory, and the frame keeps it.
+        const samples = new Int16Array(FRAME_SAMPLES * CHANNELS);
+        Buffer.from(samples.buffer).set(pending.subarray(0, FRAME_BYTES));
+        pending = pending.subarray(FRAME_BYTES);
+        applyGain(samples, Math.max(0, Math.min(100, volume())) / 100);
+        // Waits while LiveKit's queue is full: this is what paces the song.
+        await source.captureFrame(new AudioFrame(samples, SAMPLE_RATE, CHANNELS, FRAME_SAMPLES));
+        frames += 1;
+      }
+    }
+    return frames;
+  }
+
   /** Plays one track to its end, or until it is skipped. Resolves either way. */
   async function playOne(track) {
     const { source } = await ensureConnected();
-    const ytdlp = stream(track.url);
-    const ffmpeg = decode(ytdlp.stdout);
-    let stopped = false;
+    const state = { stopped: false };
+    let decoder = null;
     let errors = '';
-    ytdlp.stderr.on('data', (d) => (errors = `${errors}${d}`.slice(-2000)));
+    const kill = () => {
+      decoder?.ffmpeg.kill('SIGKILL');
+      decoder?.ytdlp?.kill('SIGKILL');
+    };
     playing = {
       stop() {
-        stopped = true;
-        ytdlp.kill('SIGKILL');
-        ffmpeg.kill('SIGKILL');
+        state.stopped = true;
+        kill();
         resume?.();
       },
     };
 
-    let pending = Buffer.alloc(0);
+    const attempts = [
+      ...(track.stream ? [() => decodeTrack(track)] : []),
+      () => decodeTrack({ ...track, stream: null }),
+    ];
     let frames = 0;
-    try {
-      for await (const chunk of ffmpeg.stdout) {
-        if (stopped) break;
-        pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;
-        while (pending.length >= FRAME_BYTES) {
-          if (paused) await new Promise((r) => (resume = r));
-          if (stopped) break;
-          // Copied out: an Int16Array needs aligned memory, and the frame keeps it.
-          const samples = new Int16Array(FRAME_SAMPLES * CHANNELS);
-          Buffer.from(samples.buffer).set(pending.subarray(0, FRAME_BYTES));
-          pending = pending.subarray(FRAME_BYTES);
-          applyGain(samples, Math.max(0, Math.min(100, volume())) / 100);
-          // Waits while LiveKit's queue is full: this is what paces the song.
-          await source.captureFrame(new AudioFrame(samples, SAMPLE_RATE, CHANNELS, FRAME_SAMPLES));
-          frames += 1;
-        }
+    for (const attempt of attempts) {
+      if (state.stopped) break;
+      decoder = attempt();
+      decoder.ffmpeg.stderr.on('data', (d) => (errors = `${errors}${d}`.slice(-2000)));
+      decoder.ytdlp?.stderr.on('data', (d) => (errors = `${errors}${d}`.slice(-2000)));
+      try {
+        frames = await pump(decoder, source, state);
+      } catch (err) {
+        if (!state.stopped) logger.warn(`[player] ${channel}: ${err.message}`);
+      } finally {
+        kill();
       }
-    } catch (err) {
-      if (!stopped) logger.warn(`[player] ${channel}: ${err.message}`);
-    } finally {
-      playing = null;
-      ytdlp.kill('SIGKILL');
-      ffmpeg.kill('SIGKILL');
+      // It played: done. Nothing came out: try the next way.
+      if (frames > 0) break;
     }
-    if (!stopped && frames === 0) {
+    playing = null;
+    if (!state.stopped && frames === 0) {
       onEvent('failed', track, errors.trim().split('\n').pop() || 'no audio');
     }
   }
@@ -191,12 +244,13 @@ export function createPlayer({
   async function loop() {
     if (running) return;
     running = true;
+    leaving = false;
     clearTimeout(idleTimer);
     try {
       for (;;) {
         const next = queue.next();
         if (!next) break;
-        const track = await resolver.ready(next).catch(() => null);
+        const track = (await next.preparing) ?? (await prepare(next));
         if (!track) {
           onEvent('missing', next);
           continue;
@@ -211,6 +265,7 @@ export function createPlayer({
           break;
         }
         onEvent('playing', track);
+        prefetch();
         await playOne(track);
       }
     } finally {
@@ -218,8 +273,10 @@ export function createPlayer({
       queue.current = null;
       paused = false;
       clearTimeout(idleTimer);
-      idleTimer = setTimeout(() => void leave(), IDLE_MS);
-      idleTimer.unref?.();
+      if (!leaving) {
+        idleTimer = setTimeout(() => void leave(), IDLE_MS);
+        idleTimer.unref?.();
+      }
     }
   }
 
@@ -232,10 +289,15 @@ export function createPlayer({
     get current() {
       return queue.current;
     },
+    /** Playing, or with songs waiting: someone is using it. */
+    get busy() {
+      return Boolean(queue.current) || queue.size > 0;
+    },
 
     /** Queues tracks and starts playing if nothing is. Returns how many were queued. */
     enqueue(tracks) {
       const added = queue.add(tracks);
+      if (running) prefetch();
       void loop();
       return added;
     },
@@ -267,7 +329,11 @@ export function createPlayer({
       return was;
     },
 
-    shuffle: () => queue.shuffle(),
+    shuffle() {
+      const count = queue.shuffle();
+      prefetch();
+      return count;
+    },
 
     /** Empties the queue, stops the song and leaves the channel. */
     async stop() {
