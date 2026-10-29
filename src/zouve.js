@@ -48,26 +48,32 @@ export function createZouve({
     if (chatId && messageId) said.push({ chatId, messageId });
   };
 
+  /** Deletes what was said in `chatId`, or in every chat. Returns false if Zoia refuses. */
+  async function sweep(chatId) {
+    const batch = said.filter((m) => !chatId || m.chatId === chatId);
+    said = said.filter((m) => !batch.includes(m));
+    for (const { chatId: where, messageId } of batch) {
+      try {
+        await zoia.unsay(where, messageId);
+      } catch (err) {
+        if (err.status === 403) {
+          cannotDelete = true;
+          logger.warn(`[zouve] Zoia does not let me delete messages: ${err.code ?? err.message}`);
+          return false;
+        }
+        // Already gone (someone deleted it) or the chat is down: move on.
+      }
+    }
+    return true;
+  }
+
   /** Deletes what was said, after `delayMs`, unless a session starts meanwhile. */
   function cleanUp(delayMs) {
     clearTimeout(cleaning);
     cleaning = setTimeout(async () => {
       cleaning = null;
       if (player || cannotDelete || settings.cleanup === false) return;
-      const batch = said;
-      said = [];
-      for (const { chatId, messageId } of batch) {
-        try {
-          await zoia.unsay(chatId, messageId);
-        } catch (err) {
-          if (err.status === 403) {
-            cannotDelete = true;
-            logger.warn(`[zouve] Zoia does not let me delete messages: ${err.code ?? err.message}`);
-            return;
-          }
-          // Already gone (someone deleted it) or the chat is down: move on.
-        }
-      }
+      await sweep();
     }, delayMs);
     cleaning.unref?.();
   }
@@ -138,6 +144,12 @@ export function createZouve({
     cleaning = null;
     const answer = (body) => reply(c.chatId, body, c.messageId);
     const channel = c.voice?.channel ?? null;
+    if (c.command === 'clean') {
+      // Anyone may tidy the chat, but not from outside the channel it is playing to.
+      if (player && player.channel !== channel) return answer(text('elsewhere'));
+      if (!cannotDelete && (await sweep(c.chatId))) return undefined;
+      return answer(text('cannotClean'));
+    }
     if (!channel) {
       // Asked from outside voice: nothing to play to, and no channel to control.
       return answer(player ? text('elsewhere') : text('joinFirst'));
@@ -187,6 +199,10 @@ export function createZouve({
         if (!here?.current) return answer(text('nothing'));
         return answer(here.togglePause() ? text('paused') : text('resumed'));
       }
+      case 'resume': {
+        if (!here?.current) return answer(text('nothing'));
+        return answer(here.resume() ? text('resumed') : text('notPaused'));
+      }
       case 'skip': {
         if (!here?.current) return answer(text('nothing'));
         const was = here.skip();
@@ -195,6 +211,23 @@ export function createZouve({
       case 'shuffle': {
         const count = here?.shuffle() ?? 0;
         return answer(count > 1 ? text('shuffled', { count }) : text('shuffledNone'));
+      }
+      case 'remove': {
+        const size = here?.queue.size ?? 0;
+        if (size === 0) return answer(text('removeNone'));
+        // One number, or two for a range, as !queue numbers them; either way round.
+        const numbers = c.args.split(/\s+/).filter(Boolean).map(Number);
+        const [from, to = from] = numbers;
+        const valid = (n) => Number.isInteger(n) && n >= 1 && n <= size;
+        if (numbers.length < 1 || numbers.length > 2 || !valid(from) || !valid(to)) {
+          return answer(text('removeUsage', { size }));
+        }
+        const gone = here.remove(Math.min(from, to), Math.max(from, to));
+        return answer(
+          gone.length === 1
+            ? text('removedOne', { track: nameOf(gone[0]) })
+            : text('removedMany', { count: gone.length }),
+        );
       }
       case 'queue': {
         if (!here?.current) return answer(text('queueEmpty'));

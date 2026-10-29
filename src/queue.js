@@ -41,6 +41,11 @@ export class Queue {
     return list.length;
   }
 
+  /** Takes out the songs `from` to `to` (1 is the next) of what is to come. Returns them. */
+  remove(from, to = from) {
+    return this.upcoming.splice(from - 1, to - from + 1);
+  }
+
   clear() {
     this.upcoming = [];
     this.current = null;

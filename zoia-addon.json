@@ -23,6 +23,10 @@
       "description": "Pauses, or carries on"
     },
     {
+      "name": "resume",
+      "description": "Carries on after a pause"
+    },
+    {
       "name": "skip",
       "description": "Skips to the next song"
     },
@@ -31,8 +35,17 @@
       "description": "Shuffles the queue"
     },
     {
+      "name": "remove",
+      "description": "Takes a song, or a range of songs, out of the queue",
+      "usage": "<number> [last number]"
+    },
+    {
       "name": "queue",
       "description": "Shows what plays now and next"
+    },
+    {
+      "name": "clean",
+      "description": "Deletes its answers and the commands typed to it, now"
     },
     {
       "name": "stop",

@@ -7,10 +7,13 @@ it is bound to:
 | ------------------------------ | ----------------------------------------------------------------------------------------- |
 | `!play <link, song or artist>` | Plays it in your voice channel, or adds it to the queue. Alone, carries on after a pause. |
 | `!pause`                       | Pauses, or carries on.                                                                    |
+| `!resume`                      | Carries on after a pause.                                                                 |
 | `!skip`                        | Skips to the next song.                                                                   |
 | `!shuffle`                     | Shuffles what is still to come.                                                           |
+| `!remove <n> [last]`           | Takes song `n` (as `!queue` numbers them) out of the queue; with two numbers, a range.    |
 | `!queue`                       | Shows what plays now and next.                                                            |
 | `!stop`                        | Empties the queue and leaves the channel.                                                 |
+| `!clean`                       | Deletes, now, the commands typed to it and what it answered.                              |
 
 The super admin can rename any of them for everyone (`!play` to `!p`), and the chat offers
 them as you type `!`.
@@ -62,7 +65,8 @@ Zouve keeps its chat tidy. When it leaves voice (`!stop`, the queue running out,
 left listening, or an admin taking it out) it deletes, ten seconds later, the commands typed
 to it during that session and everything it answered. What it says while in no channel
 (such as "join a voice channel first") goes a minute later. Turn it off with **Clean up the
-chat** in its settings.
+chat** in its settings. `!clean` does the same at once, in the chat it is typed in, whether
+it is playing or not.
 
 A deleted message disappears for everyone at once. On the server, its space is freed about
 an hour later, at the next compaction (Zoia's ADR 0042). Deleting someone's command needs
