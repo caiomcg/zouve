@@ -48,26 +48,32 @@ export function createZouve({
     if (chatId && messageId) said.push({ chatId, messageId });
   };
 
+  /** Deletes what was said in `chatId`, or in every chat. Returns false if Zoia refuses. */
+  async function sweep(chatId) {
+    const batch = said.filter((m) => !chatId || m.chatId === chatId);
+    said = said.filter((m) => !batch.includes(m));
+    for (const { chatId: where, messageId } of batch) {
+      try {
+        await zoia.unsay(where, messageId);
+      } catch (err) {
+        if (err.status === 403) {
+          cannotDelete = true;
+          logger.warn(`[zouve] Zoia does not let me delete messages: ${err.code ?? err.message}`);
+          return false;
+        }
+        // Already gone (someone deleted it) or the chat is down: move on.
+      }
+    }
+    return true;
+  }
+
   /** Deletes what was said, after `delayMs`, unless a session starts meanwhile. */
   function cleanUp(delayMs) {
     clearTimeout(cleaning);
     cleaning = setTimeout(async () => {
       cleaning = null;
       if (player || cannotDelete || settings.cleanup === false) return;
-      const batch = said;
-      said = [];
-      for (const { chatId, messageId } of batch) {
-        try {
-          await zoia.unsay(chatId, messageId);
-        } catch (err) {
-          if (err.status === 403) {
-            cannotDelete = true;
-            logger.warn(`[zouve] Zoia does not let me delete messages: ${err.code ?? err.message}`);
-            return;
-          }
-          // Already gone (someone deleted it) or the chat is down: move on.
-        }
-      }
+      await sweep();
     }, delayMs);
     cleaning.unref?.();
   }
@@ -138,6 +144,12 @@ export function createZouve({
     cleaning = null;
     const answer = (body) => reply(c.chatId, body, c.messageId);
     const channel = c.voice?.channel ?? null;
+    if (c.command === 'clean') {
+      // Anyone may tidy the chat, but not from outside the channel it is playing to.
+      if (player && player.channel !== channel) return answer(text('elsewhere'));
+      if (!cannotDelete && (await sweep(c.chatId))) return undefined;
+      return answer(text('cannotClean'));
+    }
     if (!channel) {
       // Asked from outside voice: nothing to play to, and no channel to control.
       return answer(player ? text('elsewhere') : text('joinFirst'));

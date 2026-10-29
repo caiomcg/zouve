@@ -302,6 +302,22 @@ describe('cleaning up', () => {
     assert.deepEqual(zoia.deleted.sort(), ['m-play', 'm-play', 'm-stop', 'r1', 'r2', 'r3'].sort());
   });
 
+  test('!clean deletes them at once, in its chat, even while playing', async () => {
+    await zouve.onCommand(command('play', 'one'));
+    await zouve.onCommand(command('queue'));
+    await zouve.onCommand(command('clean'));
+    assert.deepEqual(zoia.deleted.sort(), ['m-clean', 'm-play', 'm-queue', 'r1', 'r2']);
+    assert.equal(made[0].player.stopped, false);
+  });
+
+  test('!clean, refused for want of permission, says so', async () => {
+    zoia.unsay = async () => {
+      throw Object.assign(new Error('403'), { status: 403, code: 'missing_permission' });
+    };
+    await zouve.onCommand(command('clean'));
+    assert.match(last(), /does not let me delete/);
+  });
+
   test('nothing goes while it is still playing', async () => {
     await zouve.onCommand(command('play', 'one'));
     await wait(30);

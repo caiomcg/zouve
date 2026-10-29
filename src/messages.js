@@ -36,6 +36,7 @@ const TEXT = {
     missing: 'Could not find **{track}**; skipping it.',
     unjoinable: 'I could not join the voice channel ({why}).',
     elsewhere: 'I am playing in another channel; join it to control me.',
+    cannotClean: 'Zoia does not let me delete messages here.',
     removed: 'I was taken out of the voice channel, so I stopped and emptied the queue.',
   },
   pt: {
@@ -68,6 +69,7 @@ const TEXT = {
     missing: 'Não encontrei **{track}**; pulando.',
     unjoinable: 'Não consegui entrar no canal de voz ({why}).',
     elsewhere: 'Estou tocando em outro canal; entre nele para me controlar.',
+    cannotClean: 'O Zoia não me deixa apagar mensagens aqui.',
     removed: 'Fui tirado do canal de voz, então parei e esvaziei a fila.',
   },
   es: {
@@ -100,6 +102,7 @@ const TEXT = {
     missing: 'No encontré **{track}**; la salto.',
     unjoinable: 'No pude entrar al canal de voz ({why}).',
     elsewhere: 'Estoy tocando en otro canal; entra en él para controlarme.',
+    cannotClean: 'Zoia no me deja borrar mensajes aquí.',
     removed: 'Me sacaron del canal de voz, así que paré y vacié la cola.',
   },
 };
