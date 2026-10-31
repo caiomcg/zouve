@@ -56,6 +56,7 @@ function fakePlayer(options) {
       return was;
     },
     shuffle: () => queue.shuffle(),
+    remove: (from, to) => queue.remove(from, to),
     async stop() {
       player.stopped = true;
       queue.clear();
@@ -201,6 +202,17 @@ describe('controlling', () => {
     assert.match(last(), /Playing again/);
   });
 
+  test('resume carries on after a pause, and says when it was not paused', async () => {
+    await zouve.onCommand(command('resume'));
+    assert.match(last(), /not paused/);
+    await zouve.onCommand(command('pause'));
+    assert.match(last(), /!resume, or !pause again/);
+    await zouve.onCommand(command('resume'));
+    assert.match(last(), /Playing again/);
+    await zouve.onCommand(command('pause'));
+    assert.match(last(), /Paused/);
+  });
+
   test('skip names what it skipped', async () => {
     await zouve.onCommand(command('skip'));
     assert.match(last(), /Skipped \*\*Band – one\*\*/);
@@ -218,6 +230,27 @@ describe('controlling', () => {
     await zouve.onCommand(command('play', 'two'));
     await zouve.onCommand(command('queue'));
     assert.match(last(), /Now:\*\* Band – one\n\*\*Next:\*\*\n1\. Band – two/);
+  });
+
+  test('remove takes one song, or a range, as !queue numbers them', async () => {
+    await zouve.onCommand(command('remove', '1'));
+    assert.match(last(), /nothing in the queue to remove/);
+    await zouve.onCommand(command('play', 'album'));
+    await zouve.onCommand(command('play', 'four'));
+    await zouve.onCommand(command('remove', '2'));
+    assert.match(last(), /Removed \*\*Band – Song 2\*\*/);
+    await zouve.onCommand(command('remove', '3 1'));
+    assert.match(last(), /Removed 3 songs/);
+    assert.equal(made[0].player.queue.size, 0);
+  });
+
+  test('remove says how to use it when the numbers are not in the queue', async () => {
+    await zouve.onCommand(command('play', 'two'));
+    for (const args of ['', '0', '2', 'x', '1.5', '1 2', '1 1 1']) {
+      await zouve.onCommand(command('remove', args));
+      assert.match(last(), /!remove a number from !queue.*\(1 to 1\)/);
+    }
+    assert.equal(made[0].player.queue.size, 1);
   });
 
   test('stop empties it and leaves', async () => {
@@ -267,6 +300,22 @@ describe('cleaning up', () => {
     await zouve.onCommand(command('stop'));
     await wait(30);
     assert.deepEqual(zoia.deleted.sort(), ['m-play', 'm-play', 'm-stop', 'r1', 'r2', 'r3'].sort());
+  });
+
+  test('!clean deletes them at once, in its chat, even while playing', async () => {
+    await zouve.onCommand(command('play', 'one'));
+    await zouve.onCommand(command('queue'));
+    await zouve.onCommand(command('clean'));
+    assert.deepEqual(zoia.deleted.sort(), ['m-clean', 'm-play', 'm-queue', 'r1', 'r2']);
+    assert.equal(made[0].player.stopped, false);
+  });
+
+  test('!clean, refused for want of permission, says so', async () => {
+    zoia.unsay = async () => {
+      throw Object.assign(new Error('403'), { status: 403, code: 'missing_permission' });
+    };
+    await zouve.onCommand(command('clean'));
+    assert.match(last(), /does not let me delete/);
   });
 
   test('nothing goes while it is still playing', async () => {
